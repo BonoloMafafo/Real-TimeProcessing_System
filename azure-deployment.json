@@ -1,0 +1,130 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "appServicePlanName": {
+      "type": "string",
+      "defaultValue": "realtime-processing-plan"
+    },
+    "webAppName": {
+      "type": "string",
+      "defaultValue": "realtime-processing-app"
+    },
+    "functionAppName": {
+      "type": "string",
+      "defaultValue": "realtime-processor-func"
+    },
+    "sqlServerName": {
+      "type": "string",
+      "defaultValue": "realtime-sql-server"
+    },
+    "eventHubNamespace": {
+      "type": "string",
+      "defaultValue": "realtime-eventhub-ns"
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Web/serverfarms",
+      "apiVersion": "2021-02-01",
+      "name": "[parameters('appServicePlanName')]",
+      "location": "[resourceGroup().location]",
+      "sku": {
+        "name": "S1",
+        "tier": "Standard"
+      },
+      "properties": {
+        "targetWorkerCount": 1,
+        "targetWorkerSizeId": 0
+      }
+    },
+    {
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2021-02-01",
+      "name": "[parameters('webAppName')]",
+      "location": "[resourceGroup().location]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/serverfarms', parameters('appServicePlanName'))]"
+      ],
+      "properties": {
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', parameters('appServicePlanName'))]"
+      }
+    },
+    {
+      "type": "Microsoft.Web/sites/config",
+      "apiVersion": "2021-02-01",
+      "name": "[concat(parameters('webAppName'), '/web')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', parameters('webAppName'))]"
+      ],
+      "properties": {
+        "autoScaleSettings": {
+          "enabled": true,
+          "rules": [
+            {
+              "metricTrigger": {
+                "metricName": "CpuPercentage",
+                "threshold": 70,
+                "operator": "GreaterThan"
+              },
+              "scaleAction": {
+                "direction": "Increase",
+                "type": "ChangeCount",
+                "value": "1"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Sql/servers",
+      "apiVersion": "2021-02-01-preview",
+      "name": "[parameters('sqlServerName')]",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "administratorLogin": "sqladmin",
+        "administratorLoginPassword": "P@ssw0rd123!"
+      }
+    },
+    {
+      "type": "Microsoft.Sql/servers/databases",
+      "apiVersion": "2021-02-01-preview",
+      "name": "[concat(parameters('sqlServerName'), '/RealTimeProcessingDB')]",
+      "location": "[resourceGroup().location]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Sql/servers', parameters('sqlServerName'))]"
+      ],
+      "sku": {
+        "name": "S1",
+        "tier": "Standard"
+      }
+    },
+    {
+      "type": "Microsoft.EventHub/namespaces",
+      "apiVersion": "2021-01-01-preview",
+      "name": "[parameters('eventHubNamespace')]",
+      "location": "[resourceGroup().location]",
+      "sku": {
+        "name": "Standard",
+        "tier": "Standard"
+      },
+      "properties": {
+        "isAutoInflateEnabled": true,
+        "maximumThroughputUnits": 10
+      }
+    },
+    {
+      "type": "Microsoft.EventHub/namespaces/eventhubs",
+      "apiVersion": "2021-01-01-preview",
+      "name": "[concat(parameters('eventHubNamespace'), '/order-events')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.EventHub/namespaces', parameters('eventHubNamespace'))]"
+      ],
+      "properties": {
+        "messageRetentionInDays": 1,
+        "partitionCount": 4
+      }
+    }
+  ]
+}
